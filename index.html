@@ -1,625 +1,854 @@
-
 <!DOCTYPE html>
-<html lang="en">
-
+<html lang="zh">
 <head>
-	<meta charset="utf-8">
-	<title>疫情下的在线问诊</title>
-	<meta content="width=device-width, initial-scale=1.0" name="viewport">
-	<meta content="" name="keywords">
-	<meta content="" name="description">
-	<meta name="viewport"
-		content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
-	<!-- Favicons -->
-	<link href="img/favicon.png" rel="icon">
-	<link href="img/apple-touch-icon.png" rel="apple-touch-icon">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>封面制作与 EPUB 替换工具</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+        .container { display: flex; gap: 40px; max-width: 1800px; margin: 0 auto; }
+        .controls { width: 400px; background: white; padding: 25px; border-radius: 10px; box-shadow: 0 3px 8px rgba(0,0,0,0.15); position: sticky; top: 40px; align-self: flex-start; }
+        .preview { flex-grow: 1; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 40px; }
+        .preview-item { padding: 20px; background: white; border: 1px solid #eee; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column; align-items: flex-start; position: relative; margin-bottom: 10px; }
+        canvas { max-width: 100%; width: calc(100% * var(--preview-scale, 1)); border: 1px solid #ccc; border-radius: 3px; margin-top: 40px; margin-left: 0; }
+        .param-group { padding: 10px 0; }
+        .param-item { display: flex; align-items: center; margin-bottom: 3px; gap: 15px; padding: 4px 0; }
+        .param-item label { flex: 0 0 80px; margin: 0; font-size: 14px; white-space: nowrap; line-height: 1.5; }
+        .param-item .input-group { display: flex; flex-direction: row; align-items: center; gap: 10px; flex: 1; flex-wrap: nowrap; }
+        .param-item input[type="number"], 
+        .param-item input[type="text"], 
+        .param-item input[type="color"], 
+        .param-item select { width: 80px; padding: 4px; border-radius: 4px; border: 1px solid #ccc; font-size: 14px; box-sizing: border-box; vertical-align: middle; }
+        .param-item input[type="range"] { flex: 1; min-width: 150px; margin: 0; vertical-align: middle; }
+        .param-item input[type="color"] { height: 30px; padding: 0; vertical-align: middle; }
+        button { margin: 10px 20px 10px 0; padding: 12px 25px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; gap: 10px; font-size: 18px; }
+        button:hover { background: #0056b3; }
+        .download-group { display: inline-flex; align-items: center; gap: 10px; }
+        #downloadMode { padding: 8px; border-radius: 3px; border: 1px solid #ccc; font-size: 16px; }
+        #loading { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 20px; background: rgba(0,0,0,0.8); color: white; border-radius: 5px; }
+        #dropZone { 
+            width: 100%; 
+            height: 180px; 
+            border: 2px dashed #007bff; 
+            border-radius: 12px; 
+            display: flex; 
+            flex-direction: column; 
+            justify-content: center; 
+            align-items: center; 
+            background: #e6f0ff; 
+            margin-bottom: 40px; 
+            transition: all 0.3s ease; 
+            cursor: pointer; 
+        }
+        #dropZone.dragover { background: #cce0ff; border-color: #0056b3; }
+        #dropZone span { font-size: 24px; color: #007bff; margin-top: 20px; }
+        #dropZone input[type="file"] { display: none; }
+        .status { margin-top: 20px; }
+        .delete-btn {
+            position: absolute;
+            top: -30px;
+            right: 5px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            font-size: 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            z-index: 10;
+        }
+        .delete-btn:hover { background: #c82333; }
 
-	<!-- Google Fonts -->
-	<link
-		href="https://fonts.googleapis.com/css?family=Open+Sans:300,300i,400,400i,500,600,700,700i|Montserrat:300,400,500,600,700"
-		rel="stylesheet">
+        /* 预览区域内部样式调整 */
+        .preview-item label {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            width: 100%; /* 确保label占满容器宽度 */
+        }
+        .preview-item label > span {
+            flex: 0 0 120px; /* 固定label宽度 */
+            text-align: left;
+            margin-right: 15px;
+            font-size: 14px;
+            white-space: nowrap;
+        }
+        .preview-item input[type="text"],
+        .preview-item select {
+            flex: 1; /* 占满剩余空间 */
+            min-width: 0; /* 防止flex元素溢出 */
+            padding: 6px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            font-size: 14px;
+            box-sizing: border-box;
+            word-break: break-all; /* 长文字换行 */
+        }
+        .preview-item .crop-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 5px;
+            width: 100%;
+        }
+        .preview-item .crop-controls label {
+            margin-bottom: 0;
+        }
 
-	<!-- Bootstrap CSS File -->
-	<link href="lib/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+        @media (max-width: 768px) {
+            body { margin: 10px; }
+            .container { flex-direction: column; gap: 20px; }
+            .controls { width: 100%; position: static; padding: 15px; }
+            .preview { grid-template-columns: 1fr; gap: 20px; }
+            .preview-item { padding: 15px; position: relative; }
+            .param-item { 
+                flex-direction: column; 
+                align-items: flex-start; 
+                margin-bottom: 10px; 
+                gap: 5px; 
+                padding: 6px 0; 
+            }
+            .param-item label { flex: none; width: auto; }
+            .param-item .input-group { 
+                flex-direction: column; 
+                width: 100%; 
+                max-width: none; 
+                gap: 5px; 
+            }
+            .param-item input[type="number"], 
+            .param-item input[type="text"], 
+            .param-item input[type="color"], 
+            .param-item select, 
+            .param-item input[type="range"] { 
+                width: 100%; 
+                max-width: none; 
+            }
+            .param-item input[type="range"] { min-width: 0; }
+            button { padding: 8px 15px; font-size: 14px; margin: 5px 10px 5px 0; gap: 5px; }
+            #downloadMode { padding: 6px; font-size: 14px; }
+            #dropZone { height: 100px; margin-bottom: 20px; }
+            #dropZone span { font-size: 16px; margin-top: 10px; }
+            #dropZone i { font-size: 30px; }
+            .delete-btn { top: -25px; right: 5px; width: 25px; height: 25px; font-size: 12px; }
+            
+            /* 预览区域移动端调整 */
+            .preview-item label {
+                flex-direction: column; /* 垂直排列 */
+                align-items: flex-start;
+            }
+            .preview-item label > span {
+                flex: none;
+                width: auto;
+                text-align: left;
+                margin-right: 0;
+                margin-bottom: 5px;
+            }
+            .preview-item input[type="text"],
+            .preview-item select {
+                width: 100%; /* 强制全宽 */
+                flex: none;
+                word-break: break-all; /* 确保长文字换行 */
+                overflow: hidden; /* 防止溢出 */
+                box-sizing: border-box;
+            }
+            .preview-item .crop-controls {
+                gap: 8px;
+            }
+            .preview-item canvas {
+                margin-top: 30px;
+            }
+        }
 
-	<!-- Libraries CSS Files -->
-	<link href="lib/font-awesome/css/font-awesome.min.css" rel="stylesheet">
-	<link href="lib/animate/animate.min.css" rel="stylesheet">
-	<link href="lib/ionicons/css/ionicons.min.css" rel="stylesheet">
-	<link href="lib/owlcarousel/assets/owl.carousel.min.css" rel="stylesheet">
-	<link href="lib/lightbox/css/lightbox.min.css" rel="stylesheet">
-
-	<!-- Main Stylesheet File -->
-	<link href="css/style.css" rel="stylesheet">
-               <!-- 引入 echarts.js -->
-               <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/echarts/dist/echarts.min.js"></script>
-               <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/echarts-gl/dist/echarts-gl.min.js"></script>
-               <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/echarts-stat/dist/ecStat.min.js"></script>
-               <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/echarts/dist/extension/dataTool.min.js"></script>
-               <script type="text/javascript" src="js/chartStyle.js"></script>
-               <link href="css/chartStyle.css" rel="stylesheet">
+        /* EPUB选择封面窗口样式 */
+        .modal-content { padding: 15px; }
+        #coverOptions { display: flex; flex-wrap: wrap; gap: 10px; }
+        .cover-option { cursor: pointer; text-align: center; }
+        .cover-option img { max-width: 150px; max-height: 150px; object-fit: contain; border: 1px solid #ccc; border-radius: 3px; }
+        .cover-option p { margin: 5px 0 0; font-size: 12px; color: #666; }
+        .cover-option.selected img { border-color: #007bff; }
+    </style>
 </head>
-
 <body>
-	<!--==========================
-    封面
-  ============================-->	
-<header id="intro" class="clearfix">
-	<div class="container d-flex h-100">
-		<div class="row1 justify-content-center align-self-center">
-				<h1>疫情下的在线问诊：</h2>
-				<h2>“不见面”就医常态化还有多远?</h3>
-				<h3>How Far We Are From Online Clinic?</h4>
-				<img src="img/intro-img.gif" alt="" class="img-fluid">
-		</div>
-	</div>
-		<!--==========================
-		左边导航
-============================-->
-	<div id="navbar" class="clearfix">
-	<div style="color:#5b90c5;font-weight: 900;line-height: 0.9;"> <img src="img/navbar.png" alt=""></div>
-	<a href="#1" id='a_#1' style="color: gray;">医院</a>
-	<div style="color: #5b90c5;font-size: 25px;">|</div>
-	<a href="#2" id='a_#2' style="color: gray;">医师</a>
-	<div style="color: #5b90c5;font-size: 25px;">|</div>
-	<a href="#3" id='a_#3' style="color: gray;">患者</a>
-	<div style="color: #5b90c5;font-size: 25px;">|</div>
-	<a href="#4" id='a_#4' style="color: gray;">价格</a>
-	<div style="color:#5b90c5;font-size: 25px;">|</div>
-	<a href="#5" id='a_#5' style="color: gray;">应用</a>
-	<div style="color:#5b90c5;font-size: 25px;">|</div>
-	<a href="#6" id='a_#6' style="color: gray;">结语</a>
-	<div style="color:#5b90c5;font-weight: 900;line-height: 0.9;"> |<br><span style=" display:inline-block;height:17px;width:17px;border: 3px solid #5b90c5;border-radius:10px;"></span></div>
-	</div>
-</header>
-<!--==========================
-		中间内容
-============================-->
-<div class="all" style="width: 100%;">
-	<section id="about" >
-		<div class="row justify-content-center align-self-center">
-			<div class="container">
-				<div class="col-lg-12 col-md-6">
-						<div class="about-content">
-							<p>和许多足球爱好者一样，王泽云常被球场上留下的旧伤复发感到困扰。每次在决定是否要去医院之前，他都习惯先打开在线问诊平台——线上医师会告诉他没必要请假跑一趟医院，而且其实他自己早就知道需要用哪些药。
-							</p>
-							<p>在因疫情为人们所熟知之前，在线问诊其实已推行多年。2004年，寻医问药网上线，其官网显示，这是国内首个线上医患交流平台。至今，在线问诊在中国已走过十六年。那么，被“唱好”多年的在线问诊，究竟是破解看病难题的新药，还是冠以“互联网+”之名的新瓶装旧酒？在线问诊能否向常态化方向发展？我们抓取了微医和寻医问药网两个在线问诊平台的医生、医院数据及446927条问答数据，试图呈现出真实的在线问诊图景。
-							</p>
-					</div>
-				</div>
-				<!--  图1  -->
-				<div class="col-lg-12 col-md-6">
-					<div class="Echart about-img">
-								<h1>在线问诊多种模式并进，医疗赛道领域细分</h1>
-									<!--<div><span><img src="img/chart/chart1.png"></span><span style="color:#494949;font-size:14px;font-weight:300;">本稿数据来源平台<span></div>-->
-								<div id="chart1" class="chart"></div>
-								<div class="chart-exp" >
-									*轻模式指主要通过同线下机构医疗合作的方式提供线下医疗服务，重模式指通过自建线下诊所向用户提供医疗服务。
-									<br>数据来源：1.艾瑞咨询.2015年中国在线问诊行业研究报告[R].2016.
-															2.Mongan Stanley.The Era of Internet Healthcare[R].2020.
-								</div>
-					</div>
-				</div>
-			</div>	
-		<!--==========================
-			医院分布
-		============================-->
-		<a name="1" id='maodian1'></a>
-		<div class="container">
-			<div class="col-lg-12 col-md-12">
-									<div class="about-content">
-										<h2 class="fontsize18"><span class="dbt"><img src="img/visual/听诊器.gif" width="10%">医院：</span><span class="xbt">二三级医院居多，平台医院数据高于实际</span></h2>
-									</div>
-			</div>
-			<div class="col-lg-12 col-md-12">
-				<div class="about-content">
-					<p>据统计，截至4月1日，寻医问药网共有8631家医院提供在线问诊服务，以二级医院为主，比例达到43%，三级医院则占到31%，这与现实中的医院构成大不相同。事实上，中国的医疗机构呈“金字塔”分布，即以一级医院为主，二级、三级医院依次减少，优质三甲医院更是塔尖的少数。
-					</p>
-				</div>
-			</div>
-			<div class="col-lg-12 col-md-6">
-				<div class="Echart about-img Echart2">
-				<h1>二、三级医院占据多数，平台医院数据存疑</h1>
-				<div class="chart-tip">点击图例查看各级医院具体数据</div>
-				<div class="clearfix">
-					<div id="chart2" class="chart"></div>
-					<div id="chart9" class="chart"></div>
-					<div class="chart20">三甲医院数据截至2018年底,其他2020年2月底</div>
-					<div class="chart20">2020年4月底预估最大值</div>
-					<div class="chart20">数据截至2020年4月1日</div>
-					<div class="chart20 chart22">数据截至2020年4月1日</div>
-				</div>
-			</div>
-				<div class="chart-exp" >
-					*政府数据中，三甲医院截至2020年2月底，其他截至2018年底。预估数据的计算方法详见文末数据说明2。
-						<br>数据来源：1.微医 2.寻医问药网 3.国家卫生健康委员会《中国卫生健康统计年鉴》4.中国政府网统计信息中心《2020年2月底全国医疗卫生机构数》
-				</div>
-			</div>
-			<!-- 文字 class="about-content" -->
-			<div class="col-lg-12 col-md-6">
-				<div class="about-content">
-					<p>平台上的医院数量真实性仍有待考量。以三级医院数量为例，中国政府网统计信息中心资料显示，截至2020年2月底，全国共有三级医院2762 家。而截至2020年4月1日，寻医问药网上的三级医院数量为2718家，微医则有3646 家。即使考虑到两个月间全国新增的三级医院数量，平台的统计仍然过高。
-					</p>
-				</div>
-			</div>
-		</div>	
-		<!--==========================
-			医师
-		============================-->
-		<a name="2" id='maodian2'></a>
-		<div class="container">
-			<div class="col-lg-12 col-md-12">
-				<div class="about-content">
-					<h2 class="fontsize18"><span class="dbt"><img src="img/visual/听诊器.gif" width="10%">医师：</span><span class="xbt">中高级医师数量过半，评分与回答数挂钩</span></h2>
-				</div>
-			</div>
-			<div class="col-lg-12 col-md-6">
-				<div class="about-content">
-					<p>《2019中国卫生健康统计年鉴》显示，中国约五分之一的卫生技术人员有中高级职称，而在寻医问药平台，中高级医师占比达到53%，远高于实际比例。[1]</p>
-					<p>那么，中高级职称医师更多，是否意味着患者的提问多数会由他们回答？实际上，医师和住院医师回答了平台上超过一半的问题，而数量最多的副主任医师仅回答了十分之一的问题。根据统计，在所有的15万医生中，未回答过问题的医生占92%。为何存在这么多“影子医师”？截至发稿前，寻医问药平台尚未给出回复。</p>
-				</div>
-			</div>
-			<!--  图片class="about-img" -->
-			<div class="col-lg-12 col-md-6">
-				<div class="about-img">
-					<h1>高级医师数量多，问诊量却不多</h1>
-					<img src="img/visual/4-doctornum.jpeg" alt="">
-                                                                    
-					<div class="chart-exp img-exp" >
-						数据来源：寻医问药网（数据共计163574条）、《2019中国卫生健康统计年鉴》<br>
-						数据抓取时间：2020年4月7日
-					</div>
-				</div>
-			</div>
-			<!-- 文字 class="about-content" -->
-			<div class="col-lg-12 col-md-6">
-				<div class="about-content">
-					<p>每个平台设置的医生入驻条件不尽相同，但大多都需要医生拿到执业医师证。重庆医科大学临床学专业研究生周晓明称，他们班约三分之一的同学在拿到执业医师证后加入了在线问诊平台，平常就利用空余时间回答问题。他认为，来线上提问的用户往往并非患有疑难杂症。即使是作为学生，经过7年的学习和实践，自己的专业水平完全可以处理大部分问题。腾讯研究院的分析也称，我国有海量的医疗剩余资源有待激活，其中就包括194万潜在医生的时间盈余资源。[2]
-					</p>
-				</div>
-			</div>
-				<!--  图片class="about-img" -->
-			<div class="col-lg-12 col-md-6">
-				<div class="about-img">
-					
-					<h1 style="width: 50%;float: left;">微医:<br><span class="chart-xbt">医生评分越高，问诊量越高</span></h1>
-					<h1 style="width: 50%;float: right;">寻医问药:<br><span class="chart-xbt">好评与问诊量无明显线性关系</span></h1>
-					<img src="img/visual/5-doctorScore.jpeg" alt="">
-                                                                         
-					<div class="chart-exp img-exp" >
-						数据来源：微医（数据共计37133条）、寻医问药网（数据共计163574条）<br>
-						数据截至：2020年4月7日
-					</div>
-					<div class="chart-exp img-exp"></div>
-				</div>
-			</div>
-			<!-- 文字 class="about-content" -->
-			<div class="col-lg-12 col-md-6">
-				<div class="about-content">
-					<p>微医的医生评分与问诊量大致呈现正相关关系，问诊量最高的医生评分均为10分满分，大部分医生都在9分以上。相较之下，寻医问药网的医生评分也普遍较高，但与问诊量的关系并不明显。
-					</p>
-					<p>这或许与平台的推荐机制有关。线下就医时，医生的服务缺乏患者反馈这一环节，而在在线问诊时，评分会影响平台对医生的推荐和排名。医生评分越高，得到的曝光和推荐也越多。因此，在线问诊平台上的医生会尽量避免遭遇“差评”。
-					</p>
-					<p>此外，评分普遍较高或许受到患者预期影响。“因为患者付出的金钱和时间成本更低 ，本身选择线上就诊的时候心里预期并不会特别高。”泌尿外科医生李金表示，在线上接诊时感到的医患关系压力有明显的减小，因为他无需扮演被“神话”的万能医生角色。如果患者问题描述不清，或者表现出对医生明显不信任的话，他通常会联系客服退回问题。
-					</p>
-				</div>
-			</div>
-		</div>
-		<!--==========================
-			患者
-		============================-->
-		<a name="3" id='maodian3'></a>
-		<div class="container">
-				<!-- 标题放这里 -->
-				<div class="col-lg-12 col-md-6">
-					<div class="about-content">
-						<h2 class="fontsize18"><span class="dbt"><img src="img/visual/听诊器.gif" width="10%">患者：</span><span class="xbt">多提问私密问题，“不见面”更易诉说难言之疾</span></h2>
-					</div>
-				</div>
+    <h2>封面制作与 EPUB 替换工具</h2>
+    <div id="dropZone">
+        <i class="fas fa-cloud-upload-alt" style="font-size: 60px; color: #007bff;"></i>
+        <span>拖拽图片或EPUB文件到此处，或点击选择文件</span>
+        <input type="file" id="imageInput" multiple accept="image/*,.epub">
+    </div>
+    <div class="container">
+        <div class="controls">
+            <div class="param-group">
+                <h4>全局参数</h4>
+                <div class="param-item">
+                    <label>书名大小:</label>
+                    <div class="input-group">
+                        <input type="number" id="titleSize" value="160" min="50" max="300">
+                        <input type="range" id="titleSizeRange" min="50" max="300" value="160">
+                    </div>
+                </div>
+                <div class="param-item">
+                    <label>作者大小:</label>
+                    <div class="input-group">
+                        <input type="number" id="authorSize" value="100" min="30" max="200">
+                        <input type="range" id="authorSizeRange" min="30" max="200" value="100">
+                    </div>
+                </div>
+                <div class="param-item">
+                    <label>行间距:</label>
+                    <div class="input-group">
+                        <input type="number" id="lineSpacing" value="100" min="0" max="200">
+                        <input type="range" id="lineSpacingRange" min="0" max="200" value="100">
+                    </div>
+                </div>
+                <div class="param-item">
+                    <label>顶部空白:</label>
+                    <div class="input-group">
+                        <input type="number" id="topSpace" value="500" min="100" max="1000">
+                        <input type="range" id="topSpaceRange" min="100" max="1000" value="500">
+                    </div>
+                </div>
+                <div class="param-item">
+                    <label>左边距:</label>
+                    <div class="input-group">
+                        <input type="number" id="leftMargin" value="60" min="0" max="500">
+                        <input type="range" id="leftMarginRange" min="0" max="500" value="60">
+                    </div>
+                </div>
+                <div class="param-item">
+                    <label>输出宽度:</label>
+                    <div class="input-group">
+                        <input type="number" id="outputWidth" value="1860" min="500" max="2000">
+                        <input type="range" id="outputWidthRange" min="500" max="2000" value="1860">
+                    </div>
+                </div>
+                <div class="param-item">
+                    <label>宽高比:</label>
+                    <div class="input-group">
+                        <input type="number" id="aspectRatio" value="0.75" min="0.5" max="1" step="0.01">
+                        <input type="range" id="aspectRatioRange" min="0.5" max="1" step="0.01" value="0.75">
+                    </div>
+                </div>
+                <div class="param-item">
+                    <label>背景颜色:</label>
+                    <div class="input-group">
+                        <input type="color" id="bgColor" value="#ffffff">
+                    </div>
+                </div>
+                <div class="param-item">
+                    <label>文字颜色:</label>
+                    <div class="input-group">
+                        <input type="color" id="textColor" value="#000000">
+                    </div>
+                </div>
+                <div class="param-item">
+                    <label>图片处理:</label>
+                    <div class="input-group">
+                        <select id="imageMode">
+                            <option value="crop" selected>裁剪</option>
+                            <option value="stretch">拉伸</option>
+                            <option value="fitWidth">适应宽度</option>
+                            <option value="fitHeight">适应高度</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="param-item">
+                    <label>输出格式:</label>
+                    <div class="input-group">
+                        <select id="outputFormat">
+                            <option value="image/jpeg" selected>JPEG</option>
+                            <option value="image/png">PNG</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="param-item">
+                    <label>字体选择:</label>
+                    <div class="input-group">
+                        <select id="fontFamily">
+                            <option value="Arial" selected>Arial</option>
+                            <option value="Times New Roman">Times New Roman</option>
+                            <option value="Georgia">Georgia</option>
+                            <option value="Helvetica">Helvetica</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="param-item">
+                    <label>文字对齐:</label>
+                    <div class="input-group">
+                        <select id="textAlign">
+                            <option value="left" selected>左对齐</option>
+                            <option value="center">居中</option>
+                            <option value="right">右对齐</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="param-item">
+                    <label>预览缩放:</label>
+                    <div class="input-group">
+                        <select id="previewScale">
+                            <option value="0.25">25%</option>
+                            <option value="0.5" selected>50%</option>
+                            <option value="0.75">75%</option>
+                            <option value="1">100%</option>
+                            <option value="1.25">125%</option>
+                            <option value="1.5">150%</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="download-group">
+                <button onclick="downloadAll()"><i class="fas fa-download"></i> 下载全部</button>
+                <select id="downloadMode">
+                    <option value="zip" selected>打包为ZIP</option>
+                    <option value="individual">逐个下载</option>
+                </select>
+            </div>
+            <button onclick="clearAllFiles()"><i class="fas fa-trash"></i> 清空所有</button>
+            <button onclick="resetDefaults()"><i class="fas fa-undo"></i> 重置默认</button>
+        </div>
+        <div class="preview" id="previewContainer"></div>
+    </div>
+    <div id="loading" class="alert alert-info">处理中，请稍候...</div>
+    <div id="status" class="status alert" style="display: none;"></div>
 
-				<!-- 文字 class="about-content" -->
-				<div class="col-lg-12 col-md-6">
-					<div class="about-content">
-						<p>研究发现，年轻、收入低、疾病紧急程度一般或者外地的患者更倾向于使用在线医疗。[3]在寻医问药网四十多万条的问答数据的统计中，10-29岁患者的问题占据半壁江山。而在提问类型方面，与生殖相关的私密问题超过十四万条，超过所有数据的四分之一。除私密问题外，不太致命且发病原因尚不清楚的疾病更容易被提及。
-						</p>
-					</div>
-				</div>
+    <script>
+      
+    let images = [];
+    let epubFiles = [];
 
-				<!--  图片class="about-img" -->
-				<div class="col-lg-12 col-md-6">
-					<div class="about-img">
-						<h1>在线问诊提问类型偏向明显<p class="chart-xbt">私密性较强的疾病、紧急程度一般的疾病更容易被提问</p></h1>
-						<img src="img/visual/questions.jpg" alt="">
-                                                                        
-						<div class="chart-exp img-exp" >数据来源：寻医问药网（数据共计446927条）<br>数据分布于2019年3月-2020年3月之间</div>
-					</div>
-				</div>
+    const defaultParams = {
+        titleSize: 160, authorSize: 100, lineSpacing: 100, topSpace: 500, leftMargin: 60, outputWidth: 1860, aspectRatio: 0.75,
+        bgColor: '#ffffff', textColor: '#000000', imageMode: 'crop', outputFormat: 'image/jpeg', fontFamily: 'Arial', textAlign: 'left', previewScale: 0.5
+    };
 
-				<!-- 文字 class="about-content" -->
-				<div class="col-lg-12 col-md-6">
-					<div class="about-content">
-						<p>隐秘的、互动的在线问诊平台，为无处诉说的烦恼提供了树洞，也扮演着性教育的家长角色。寻医问药网的问答里，不乏未成年少女的求助：“ 被性侵了，会怀孕吗？” 回复此类问题时，医生往往建议女孩拿起法律武器维护权益。作为一名泌尿外科医生，李金有20%-30%的时间都在解答性教育科普问题：“其实很多患者都没有医学常识，尤其十多岁的男孩经常有性方面的提问。但这些问题并不是一种疾病状态，而是生理卫生的小知识。”受耻感文化影响的未成年人，并非那么容易开口讲诉难言之疾，“不见面"就医则提供了一种解决方案。</p>
-						<p>然而，在线提问私密问题可能会带来隐私暴露的风险。在春雨医生、好大夫等网站上，都可以看到提问者的咨询历史和问答详情。4月10日，国家计算机病毒应急处理中心公布，春雨医生、好大夫、平安好医生等9款医疗类APP涉嫌隐私不合规行为，包括未向用户明示申请的全部隐私权限、未说明收集使用个人信息规则、未提供有效的更正、删除个人信息及注销用户账号功能。[4]平台对患者隐私的保护还有待提升。
-						</p>
-					</div>
-				</div>
-		</div>
-		<!--==========================
-			价格
-		============================-->
-		<a name="4" id='maodian4'></a>
-		<div class="container">
-				<!-- 标题放这里 -->
-				<div class="col-lg-12 col-md-6">
-					<div class="about-content">
-						<h2 class="fontsize18"><span class="dbt"><img src="img/visual/听诊器.gif" width="10%">价格：</span><span class="xbt">普遍高于线下门诊费用，缺乏优势</span></h2>
-					</div>
-				</div>
+    const dropZone = document.getElementById('dropZone');
+    const imageInput = document.getElementById('imageInput');
 
-				<!-- 文字 class="about-content" -->
-				<div class="col-lg-12 col-md-6">
-					<div class="about-content">
-						<p>微医主要提供图文问诊和视话问诊两种服务，均需要付费。除少数医生问诊价格超过500元以外，大多数医生的图文问诊价格在0到250元之间，并集中在100元以内。
-						</p>
-					</div>
-				</div>
+    function debounce(func, wait) {
+        let timeout;
+        return function(...args) {
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(this, args), wait);
+        };
+    }
 
-											<div>
-											<div class="Echart bout-content col-lg-12 col-md-12">
-													<h1>在线问诊定价跨度大，用户青睐低价</h1>
-													<div class="chart-exp">点击图例查看不同职称医师具体数据</div>
-													<div id="chart7" class="chart" ></div>
-															<div class="chart-exp chart7-exp">
-																	数据来源：微医（数据共计37133条）<br>数据截至：2020年4月7日
-															</div>
-											</div>
-													<script type="text/javascript" src="js/datavisual.js"></script>
-													<script type="text/javascript" src="js/parallel.js"></script>
-											</div> 
+    function saveParams() {
+        const params = {
+            titleSize: document.getElementById('titleSize').value,
+            authorSize: document.getElementById('authorSize').value,
+            lineSpacing: document.getElementById('lineSpacing').value,
+            topSpace: document.getElementById('topSpace').value,
+            leftMargin: document.getElementById('leftMargin').value,
+            outputWidth: document.getElementById('outputWidth').value,
+            aspectRatio: document.getElementById('aspectRatio').value,
+            bgColor: document.getElementById('bgColor').value,
+            textColor: document.getElementById('textColor').value,
+            imageMode: document.getElementById('imageMode').value,
+            outputFormat: document.getElementById('outputFormat').value,
+            fontFamily: document.getElementById('fontFamily').value,
+            textAlign: document.getElementById('textAlign').value,
+            previewScale: document.getElementById('previewScale').value
+        };
+        localStorage.setItem('kindleCoverParams', JSON.stringify(params));
+    }
 
-				<!-- 文字 class="about-content" -->
-				<div class="col-lg-12 col-md-6">
-					<div class="about-content">
-						<p>目前，在线问诊并未全面纳入医保报销范围，因此在就诊价格上优势并不明显。例如，主任医师的平均图文问诊价格为77元，而主治医师价格仅为26元左右，均低于线下医院医事服务费（原挂号费）。但是，扣除医保报销的40元后，在线问诊的价格优势消失。而专家视话问诊费用则普遍高于北京三甲医院知名专家的问诊费用。
-						</p>
-					</div>
-				</div>
-			
-				<!--  图片class="about-img" -->
-				<div class="col-lg-12 col-md-6">
-					<div class="about-img">
-						<h1>在线问诊缺乏价格优势，普遍高于线下门诊费用</h1>
-						<img src="img/visual/9-averagePrice.jpeg" alt="">                                            
-						<div class="chart-exp  img-exp">
-							*线下医事服务费表不包含“住院医师”一项，线上医师分类不包含“知名专家”一项<br>
-							数据来源：北京大学第三医院公开信息、微医（数据共计37133条）<br>
-							数据抓取时间：2020年4月7日
-						</div>
-					</div>
-				</div>
+    function loadParams() {
+        const savedParams = JSON.parse(localStorage.getItem('kindleCoverParams')) || defaultParams;
+        document.getElementById('titleSize').value = savedParams.titleSize;
+        document.getElementById('titleSizeRange').value = savedParams.titleSize;
+        document.getElementById('authorSize').value = savedParams.authorSize;
+        document.getElementById('authorSizeRange').value = savedParams.authorSize;
+        document.getElementById('lineSpacing').value = savedParams.lineSpacing;
+        document.getElementById('lineSpacingRange').value = savedParams.lineSpacing;
+        document.getElementById('topSpace').value = savedParams.topSpace;
+        document.getElementById('topSpaceRange').value = savedParams.topSpace;
+        document.getElementById('leftMargin').value = savedParams.leftMargin;
+        document.getElementById('leftMarginRange').value = savedParams.leftMargin;
+        document.getElementById('outputWidth').value = savedParams.outputWidth;
+        document.getElementById('outputWidthRange').value = savedParams.outputWidth;
+        document.getElementById('aspectRatio').value = savedParams.aspectRatio;
+        document.getElementById('aspectRatioRange').value = savedParams.aspectRatio;
+        document.getElementById('bgColor').value = savedParams.bgColor;
+        document.getElementById('textColor').value = savedParams.textColor;
+        document.getElementById('imageMode').value = savedParams.imageMode;
+        document.getElementById('outputFormat').value = savedParams.outputFormat;
+        document.getElementById('fontFamily').value = savedParams.fontFamily;
+        document.getElementById('textAlign').value = savedParams.textAlign;
+        document.getElementById('previewScale').value = savedParams.previewScale;
+        updatePreviewScale();
+    }
 
-				<!-- 文字 class="about-content" -->
-				<div class="col-lg-12 col-md-6">
-					<div class="about-content">
-						<p>在线问诊费是否过高？北京医院的主治医生张凯称：“如果是质量比较高的回复，普遍应比线下挂号费要高，因为线下没有市场调节，实在是太低了。纯线上模式的互联网医院价格都是弹性的，医生有很大的自主权。” 
-						</p>
-					</div>
-				</div>
-		</div>
-		<!--==========================
-			应用
-		============================-->
-		<a name="5" id='maodian5'></a>
-		<div class="container">
-						<!-- 标题放这里 -->
-						<div class="col-lg-12 col-md-6">
-							<div class="about-content">
-								<h2 class="fontsize18"><span class="dbt"><img src="img/visual/听诊器.gif" width="10%">应用：</span><span class="xbt">场景有限，仅限于复诊和慢性疾病用药</span></h2>
-							</div>
-						</div>
+    window.addEventListener('load', loadParams);
 
-						<!-- 文字 class="about-content" -->
-						<div class="col-lg-12 col-md-6">
-							<div class="about-content">
-								<p>国家对互联网医疗的诊疗范围有严格规定，根据2018年国家卫健委发布的《互联网诊疗管理办法（试行）》，线上医疗机构不得对首诊患者开展互联网诊疗活动。[5]这意味着，对于没有在医院线下确诊的用户，在线问诊平台仅能提供建议，不能下诊断或开处方。当患者出现病情变化需要医务人员亲自诊查时，要引导患者到实体医疗机构就诊。
-								</p>
-								<p>因此，在线医疗目前无法成为医院的“替补品”，更多的只是为患者提供“确诊前”和“确诊后”的服务。一些患者在线问诊后，最终还是会回到实体医院就诊。太原理工大学就读的李闯同学，因精神焦虑到山西医科大学第一医院线上平台问诊，但医生建议他“还是要去医院看”。兜兜转转最终还是要回到实体医院就诊，这使得他很不满意。
-								</p>
-							</div>
-						</div>
-						
-						<div>
-													<div class="Echart Echart8 bout-content col-lg-12 col-md-12">
-															<h1>在线问诊流程图：应用场景有限</h1>
-															<div>
-															<span style="color:#ffffff;font-size:13px;display:inline-block;width:65px;text-align:center;background-color:#5b90c5;border-radius: 5px;">线上流程 </span>
-															&nbsp&nbsp
-															<span style="display:inline-block;width:65px;text-align:center;color:#ffffff;font-size:13px;background-color:#9b8eb9;border-radius: 5px;">线下流程 </span></div>
-																	<div id="chart8" class="chart" ></div>
-																	<div id="chart10" class="chart" ></div>
-																	<div class="chart-exp">
-																			数据来源：国家中医药管理局.互联网诊疗管理办法(试行)[EB/OL].2018-7-17.
-															</div>
-													</div>
-															<script type="text/javascript" src="js/datavisual.js"></script>
-															<script type="text/javascript" src="js/parallel.js"></script>
-													</div> 
+    function bindInputAndRange(numberId, rangeId) {
+        const numberInput = document.getElementById(numberId);
+        const rangeInput = document.getElementById(rangeId);
+        numberInput.addEventListener('input', () => {
+            rangeInput.value = numberInput.value;
+            debouncedUpdateAllPreviews();
+            saveParams();
+        });
+        rangeInput.addEventListener('input', () => {
+            numberInput.value = rangeInput.value;
+            debouncedUpdateAllPreviews();
+            saveParams();
+        });
+    }
 
-						<!-- 文字 class="about-content" -->
-						<div class="col-lg-12 col-md-6">
-							<div class="about-content">
-								<p>“不见面”的就诊形式，也带来了诸多不便。李金医生称：“线上有时候是不能够判断病人情绪的，就医说通俗一点其实也是人与人之间的交流，考虑治疗方案的时候不能够兼顾患方的接受程度。”张凯则认为，不方便的地方在于不能像面诊一样进行检查，很多患者是初次就诊，缺乏必要的辅助检查，在给出诊断的时候会存在经验因素偏大的情况。
-								</p>
-								<p>这一情况正在好转。在国家“互联网+医疗”的政策推动下，很多省份、医院建立了自己的在线问诊平台。上海复旦大学附属中山医院副院长钱菊英在接受腾讯网采访时表示，相较于依托互联网公司，由医院主导的在线问诊掌握了线下辅助检查的资源，更有能力进行后续治疗。[6]
-								</p>
-								<p>受疫情影响，多部委下发多个文件推动互联网医疗领域的改革探索，为互联网医疗“松绑”。一方面是将在线问诊接入医保体系，明确将常见病、慢性病“互联网+”复诊服务纳入医保基金支付范围；另一方面放开互联网首诊，4月7日发布的《关于推进“上云用数赋智”行动 培育新经济发展实施方案》首次提出探索推进互联网医疗医保首诊制和预约分诊制。[7]不过，每日经济新闻在4月17日的报道中指出，方案中指的不是探索医疗首诊，而是医保首诊，互联网医疗首诊并没有真正放开，现阶段互联网医疗尚未成熟，放开首诊具有一定风险。[8]
-								</p>
-							</div>
-						</div>
-		</div>
-		<!--==========================
-			结语
-		============================-->
-		<a name="6" id='maodian6'></a>
-		<div class="container">
-								<!-- 标题放这里 -->
-			<div class="col-lg-12 col-md-6" >
-				<div class="about-content">
-					<h2 class="fontsize18 dbt"><img src="img/visual/听诊器.gif" width="10%">结语</h2>
-				</div>
-			</div>
+    bindInputAndRange('titleSize', 'titleSizeRange');
+    bindInputAndRange('authorSize', 'authorSizeRange');
+    bindInputAndRange('lineSpacing', 'lineSpacingRange');
+    bindInputAndRange('topSpace', 'topSpaceRange');
+    bindInputAndRange('leftMargin', 'leftMarginRange');
+    bindInputAndRange('outputWidth', 'outputWidthRange');
+    bindInputAndRange('aspectRatio', 'aspectRatioRange');
 
-			<!-- 文字 class="about-content" -->
-			<div class="col-lg-12 col-md-6" >
-				<div class="about-content">
-					<p>距离常态化，在线问诊尚有一段路要走。不过，随着互联网医保首诊制和预约分诊制的逐步推行，在线问诊或许可以跳出简单咨询的窠臼。此外，在线问诊一定程度上填补了医疗资源差距沟壑。主治医生张凯认为，互联网医院的价值在于，很多医疗资源匮乏地区的患者也能得到好的意见。
-					</p>
-					<p>目前，平台层面仍缺乏用户黏性。受踢足球留下的后遗症困扰的王泽云，在线问诊结束后就删掉了手机里的APP，只有在需要用时才会下载回来。而医生的选择也受到收入激励的影响，周晓明笑着说：“为什么年轻医生愿意答题？因为他们实在是太穷了。我上班以后可能不会继续在线上接诊。这么说吧，如果你在重庆月收入1.5~2万，你还会每天挤出一小时挣这一千块吗？”
-					</p>
-					<p>(应受访者要求，文中王泽云、周晓明、李金、张凯、李闯均为化名)
-					</p>
-				</div>
-			</div>
-		</div>
+    ['bgColor', 'textColor', 'imageMode', 'outputFormat', 'fontFamily', 'textAlign'].forEach(id => {
+        document.getElementById(id).addEventListener('change', () => {
+            debouncedUpdateAllPreviews();
+            saveParams();
+        });
+    });
 
+    document.getElementById('previewScale').addEventListener('change', () => {
+        updatePreviewScale();
+        saveParams();
+    });
 
-		<!--==========================
-			数据说明、参考文献、分工
-		============================-->
-		<div class="container">
-			<div class="col-lg-12 col-md-6" >
+    function updatePreviewScale() {
+        const scale = document.getElementById('previewScale').value;
+        document.documentElement.style.setProperty('--preview-scale', scale);
+        updateAllPreviews();
+    }
 
-		<hr>
-		<div style="font-size: 11px;text-align:justify; text-justify:inter-ideograph;word-break: break-all;">
-						<b><font color=413e66>数据说明：
-						</font></b>
-						<br>1.&nbsp;微医:https://www.guahao.com/；寻医问药网:http://www.xywy.com/
-						<br>2.&nbsp;预估数据的计算方法：三甲医院数量以《中国卫生健康统计年鉴》近十年医院数据为基础，计算出最大年增幅为108家（2010-2011）。据此估计，2020年4月底全国三甲医院最大数值为1442+108*2+108/12*4=1694家，但不排除因为疫情三甲医院数量激增的可能性。其他级别医院以统计信息中心实时通报数据为基础，计算出近三个月平均月增幅，并分别进行相加得出。			
-						<br>3.&nbsp;微医每个分类下医生数据只显示38页，医院数据只显示61页，因而只能利用显示的数据进行分析。其中医生数据于4月7日抓取，共计37133条；医院数据于4月1日抓取，共计17024条。
-						<br>4.&nbsp;寻医问药网医生数据于3月31日抓取，共计163574条，其中最新在线专家150947条，电话问诊专家12093条，常见疾病推荐专家534条。由于仅电话专家显示价格，医生收费部分根据问答收费中的实际付费情况进行分析。寻医问药网医院数据于4月1日抓取，共计8631条。
-						<br>5.&nbsp;官方统计医师比例经四舍五入后，大于100%，因此对误差值最大的主任医师数值向下取整。
-						<br>6.&nbsp;寻医问药网问答数据分布于2019年3月-2020年3月之间，共计446927条。								
-						<br><br>
-						<b><font color=413e66>参考文献：</font></b>
-						<br>[1]国家卫生健康委员会.中国卫生健康统计年鉴2019[M].北京:中国协和医科大学出版社,2019.	
-						<br>[2]孙怡,陈丽月,周琴.医疗+分享,会擦出怎样的火花?[J].大数据时代,2017(04):58-73.									
-						<br>[3]戚淼杰,韩优莉.医院就诊患者在线医疗使用现状及其相关因素研究——基于北京市三级医院门诊患者的调查[J].中国卫生政策研究,2019,12(07):70-74.
-						<br>[4]新华社.国家计算机病毒应急处理中心监测发现20余款违规移动应用[EB/OL].:http://www.xinhuanet.com/fortune/2020-04/10/c_1125838474.htm,2020-04-10 .
-						<br>[5]国家卫健委.互联网诊疗管理办法（试行）[EB/OL].:http://www.gov.cn/gongbao/content/2019/content_5358684.htm,2018-7-17.									
-						<br>[6]腾讯网-医院汇.疫情催生线上诊疗，互联网医院路在何方？[EB/OL].:https://new.qq.com/rain/a/20200417A06M8000,2020-4-25.		
-						<br>[7]发展改革委,中央网信办.关于推进“上云用数赋智”行动 培育新经济发展实施方案[EB/OL].:http://www.gov.cn/zhengce/zhengceku/2020-04/10/content_5501163.htm,2020-4-7.						
-						<br>[8]每日经济新闻.独家！互联网医疗首诊未放开，纳入医保更系误读[EB/OL].:http://www.nbd.com.cn/articles/2020-04-17/1426376.html,2020-4-25.
-						<p></p>
-						<p></p>		
-						<p></p>											
-					</div>
-				</div>
-				
-				
-		</div>
+    dropZone.addEventListener('click', () => imageInput.click());
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); handleFileUpload(e.dataTransfer.files); });
+    imageInput.addEventListener('change', (e) => handleFileUpload(e.target.files));
 
-	<!--==========================
-		Footer
-	============================-->
-	</section>
-<div>
+    async function handleFileUpload(files) {
+        if (!files || files.length === 0) { showStatus('请至少选择一个文件！', 'danger'); return; }
+        const validFiles = Array.from(files).filter(file => {
+            const isImage = file.type.startsWith('image/');
+            const isEpub = file.name.toLowerCase().endsWith('.epub');
+            return isImage || isEpub;
+        });
+        if (validFiles.length === 0) { showStatus('没有有效的图片或EPUB文件！', 'danger'); return; }
+        if (validFiles.length !== files.length) { showStatus('只支持图片和EPUB文件，已过滤掉其他文件！', 'warning'); }
 
-	<!-- #footer -->
-	<footer id="footer" class="section-bg">
-		<div class="author">
-			项目统筹：熊隽晗、王云林<br>
-			数据抓取及分析：王云林、张文骁、王楠、张舒琳、熊隽晗<br>
-			数据可视化：熊隽晗、王云林、张舒琳<br>
-			采访及文案：张舒琳、张文骁<br>
-			视觉设计：王楠<br>
-			网页开发：张文骁、熊隽晗<br>
-			特别鸣谢：张宇 提供技术支持<br>
-			<br>
-			指导教师：方洁<br>
-			<br>
-			中国人民大学新闻学院&商学院IMBA 北京师范大学新闻与传播学院<br>
-			&copy;中国人民大学《数据新闻与数据可视化》课程出品<br>
-			欢迎联系我们：xiongjunhan@ruc.edu.cn
-		</div>	
-	</footer> 
+        const newEpubFiles = validFiles.filter(file => file.name.toLowerCase().endsWith('.epub'));
+        epubFiles = [...epubFiles, ...newEpubFiles.filter(f => !epubFiles.some(existing => existing.name === f.name))];
 
-	<div class="row">
-	<div class="col-lg-12 col-md-6">
-		<a href="#" class="back-to-top"><i class="fa fa-chevron-up"></i></a>
-	</div>
-</div>
-	<!-- JavaScript Libraries -->
-	<script src="lib/jquery/jquery.min.js"></script>
-	<script src="lib/jquery/jquery-migrate.min.js"></script>
-	<script src="lib/bootstrap/js/bootstrap.bundle.min.js"></script>
-	<script src="lib/easing/easing.min.js"></script>
-	<script src="lib/mobile-nav/mobile-nav.js"></script>
-	<script src="lib/wow/wow.min.js"></script>
-	<script src="lib/waypoints/waypoints.min.js"></script>
-	<script src="lib/counterup/counterup.min.js"></script>
-	<script src="lib/owlcarousel/owl.carousel.min.js"></script>
-	<script src="lib/isotope/isotope.pkgd.min.js"></script>
-	<script src="lib/lightbox/js/lightbox.min.js"></script>
-	<!-- Contact Form JavaScript File -->
-	<script src="contactform/contactform.js"></script>
+        const previewContainer = document.getElementById('previewContainer');
+        showLoading(true);
 
-	<!-- Template Main Javascript File -->
-	<script src="js/main.js"></script>
-	<script type="text/javascript">
-		function htmlScroll() {
-			var top = document.body.scrollTop || document.documentElement.scrollTop;
-			if (elFix.data_top < top) {
-				elFix.style.position = 'fixed';
-				elFix.style.top = 0;
-				elFix.style.left = elFix.data_left;
-			} else {
-				elFix.style.position = 'static';
-			}
-			var maodian1 = document.getElementById('maodian1');
-			var maodian2 = document.getElementById('maodian2');
-			var maodian3 = document.getElementById('maodian3');
-			var maodian4 = document.getElementById('maodian4');
-			var maodian5 = document.getElementById('maodian5');
-			var maodian6 = document.getElementById('maodian6');
-			var a_1 = document.getElementById('a_#1');
-			var a_2 = document.getElementById('a_#2');
-			var a_3 = document.getElementById('a_#3');
-			var a_4 = document.getElementById('a_#4');
-			var a_5 = document.getElementById('a_#5');
-			var a_6 = document.getElementById('a_#6');
+        for (let i = 0; i < validFiles.length; i++) {
+            const file = validFiles[i];
+            try {
+                if (file.type.startsWith('image/')) await processImageFile(file, images.length + i);
+                else if (file.name.toLowerCase().endsWith('.epub')) await processEpubFile(file, images.length + i);
+            } catch (error) { showStatus(`处理文件 ${file.name} 时出错: ${error.message}`, 'danger'); }
+        }
+        updateEpubOptions();
+        showLoading(false);
+    }
 
-			if (maodian6.offsetTop + topImgHeight <= top + 1) {
-				a_1.style.color = 'gray'
-				a_2.style.color = 'gray'
-				a_3.style.color = 'gray'
-				a_4.style.color = 'gray'
-				a_5.style.color = 'gray'
-				a_6.style.color = '#3f3c63'
-				a_1.style.fontSize = '1rem'
-				a_2.style.fontSize = '1rem'
-				a_3.style.fontSize = '1rem'
-				a_4.style.fontSize = '1rem'
-				a_5.style.fontSize = '1rem'
-				a_6.style.fontSize = '1.5rem'
-			} else if (maodian5.offsetTop + topImgHeight <= top + 1) {
-				a_1.style.color = 'gray'
-				a_2.style.color = 'gray'
-				a_3.style.color = 'gray'
-				a_4.style.color = 'gray'
-				a_5.style.color = '#3f3c63'
-				a_6.style.color = 'gray'
-				a_1.style.fontSize = '1rem'
-				a_2.style.fontSize = '1rem'
-				a_3.style.fontSize = '1rem'
-				a_4.style.fontSize = '1rem'
-				a_5.style.fontSize = '1.5rem'
-				a_6.style.fontSize = '1rem'
-			} else if (maodian4.offsetTop + topImgHeight <= top + 1) {
-				a_1.style.color = 'gray'
-				a_2.style.color = 'gray'
-				a_3.style.color = 'gray'
-				a_4.style.color = '#3f3c63'
-				a_5.style.color = 'gray'
-				a_6.style.color = 'gray'
-				a_1.style.fontSize = '1rem'
-				a_2.style.fontSize = '1rem'
-				a_3.style.fontSize = '1rem'
-				a_4.style.fontSize = '1.5rem'
-				a_5.style.fontSize = '1rem'
-				a_6.style.fontSize = '1rem'
-			} else if (maodian3.offsetTop + topImgHeight <= top + 1) {
-				a_1.style.color = 'gray'
-				a_2.style.color = 'gray'
-				a_3.style.color = '#3f3c63'
-				a_4.style.color = 'gray'
-				a_5.style.color = 'gray'
-				a_6.style.color = 'gray'
-				a_1.style.fontSize = '1rem'
-				a_2.style.fontSize = '1rem'
-				a_3.style.fontSize = '1.5rem'
-				a_4.style.fontSize = '1rem'
-				a_5.style.fontSize = '1rem'
-				a_6.style.fontSize = '1rem'
-			} else if (maodian2.offsetTop + topImgHeight <= top + 1) {
-				a_1.style.color = 'gray'
-				a_2.style.color = '#3f3c63'
-				a_3.style.color = 'gray'
-				a_4.style.color = 'gray'
-				a_5.style.color = 'gray'
-				a_6.style.color = 'gray'
-				a_1.style.fontSize = '1rem'
-				a_2.style.fontSize = '1.5rem'
-				a_3.style.fontSize = '1rem'
-				a_4.style.fontSize = '1rem'
-				a_5.style.fontSize = '1rem'
-				a_6.style.fontSize = '1rem'
-			} else if (maodian1.offsetTop + topImgHeight <= top + 1) {
-				a_1.style.color = '#3f3c63'
-				a_2.style.color = 'gray'
-				a_3.style.color = 'gray'
-				a_4.style.color = 'gray'
-				a_5.style.color = 'gray'
-				a_6.style.color = 'gray'
-				a_1.style.fontSize = '1.5rem'
-				a_2.style.fontSize = '1rem'
-				a_3.style.fontSize = '1rem'
-				a_4.style.fontSize = '1rem'
-				a_5.style.fontSize = '1rem'
-				a_6.style.fontSize = '1rem'
+    function processImageFile(file, index) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            const filename = file.name.split('.')[0];
+            const [title, author] = filename.split('-').length > 1 ? filename.split('-') : [filename, '未知作者'];
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    images[index] = { img, title: title.trim(), author: author.trim(), filename, imageMode: document.getElementById('imageMode').value, cropX: 0.5, cropY: 0.5, epubIndex: -1 };
+                    createPreviewItem(index);
+                    resolve();
+                };
+                img.onerror = () => reject(new Error(`无法加载图片: ${file.name}`));
+                img.src = e.target.result;
+            };
+            reader.onerror = () => reject(new Error(`读取图片文件失败: ${file.name}`));
+            reader.readAsDataURL(file);
+        });
+    }
 
+    async function processEpubFile(file, index) {
+        try {
+            const zip = new JSZip();
+            await zip.loadAsync(file);
+            const coverCandidates = await findCoverCandidates(zip);
+            if (coverCandidates.length === 0) throw new Error(`无法在 ${file.name} 中找到封面图片`);
 
-			}
-		}
+            let selectedCoverDataUrl = coverCandidates.length === 1 ? coverCandidates[0].dataUrl : await selectCoverFromCandidates(coverCandidates, file.name);
+            if (!selectedCoverDataUrl) return;
 
-		function htmlPosition(obj) {
-			var o = obj;
-			var t = o.offsetTop;
-			var l = o.offsetLeft;
-			while (o = o.offsetParent) {
-				t += o.offsetTop;
-				l += o.offsetLeft;
-			}
-			obj.data_top = t;
-			obj.data_left = l;
-		}
+            const img = await loadImageWithTimeout(selectedCoverDataUrl, file.name, 10000);
+            const filename = file.name.split('.')[0];
+            const [title, author] = filename.split('-').length > 1 ? filename.split('-') : [filename, '未知作者'];
+            images[index] = { img, title: title.trim(), author: author.trim(), filename, imageMode: document.getElementById('imageMode').value, cropX: 0.5, cropY: 0.5, epubIndex: epubFiles.findIndex(f => f.name === file.name) };
+            createPreviewItem(index);
+        } catch (error) { throw error; }
+    }
 
-		var oldHtmlWidth = document.documentElement.offsetWidth;
-		window.onresize = function () {
-			var newHtmlWidth = document.documentElement.offsetWidth;
-			if (oldHtmlWidth == newHtmlWidth) {
-				return;
-			}
-			oldHtmlWidth = newHtmlWidth;
-			elFix.style.position = 'static';
-			htmlPosition(elFix);
-			htmlScroll();
-		}
-		window.onscroll = htmlScroll;
+    function loadImageWithTimeout(src, filename, timeoutMs) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            const timeout = setTimeout(() => reject(new Error(`加载封面图片超时 (${filename})`)), timeoutMs);
+            img.onload = () => { clearTimeout(timeout); resolve(img); };
+            img.onerror = () => { clearTimeout(timeout); reject(new Error(`无法加载EPUB封面图片: ${filename}`)); };
+            img.src = src;
+        });
+    }
 
-		var elFix = document.getElementById('navbar');
+    async function findCoverCandidates(zip) {
+        const opfFile = Object.keys(zip.files).find(file => file.toLowerCase().endsWith('.opf'));
+        if (!opfFile) return [];
+        const opfText = await zip.file(opfFile).async("string");
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(opfText, "application/xml");
+        const candidates = [];
+        const basePath = opfFile.substring(0, opfFile.lastIndexOf("/") + 1);
 
-		htmlPosition(elFix);
+        const coverMeta = doc.querySelector('meta[name="cover"]');
+        if (coverMeta) {
+            const coverId = coverMeta.getAttribute("content");
+            const coverItem = doc.querySelector(`item[id="${coverId}"]`);
+            if (coverItem) await addCandidateIfImage(zip, basePath + coverItem.getAttribute("href"), candidates);
+        }
 
-		// 锚点获取高度动态渲染左侧导航
+        const items = doc.getElementsByTagName("item");
+        for (let item of items) {
+            const href = basePath + item.getAttribute("href");
+            const id = item.getAttribute("id")?.toLowerCase();
+            const properties = item.getAttribute("properties");
+            if ((id && id.includes("cover")) || properties === "cover-image") await addCandidateIfImage(zip, href, candidates);
+        }
 
-		var topImgHeight = elFix.offsetTop;
+        if (candidates.length === 0) {
+            for (const filePath of Object.keys(zip.files)) {
+                if (/cover\.(jpe?g|png)$/i.test(filePath)) await addCandidateIfImage(zip, filePath, candidates);
+            }
+        }
+        return candidates;
+    }
 
-		var maodian1 = document.getElementById('maodian1');
-		var maodian2 = document.getElementById('maodian2');
-		var maodian3 = document.getElementById('maodian3');
-		var maodian4 = document.getElementById('maodian4');
-		var maodian5 = document.getElementById('maodian5');
-		var maodian6 = document.getElementById('maodian6');
-		console.log(maodian1.offsetTop + topImgHeight)
-		console.log(maodian2.offsetTop + topImgHeight)
-		console.log(maodian3.offsetTop + topImgHeight)
-		console.log(maodian4.offsetTop + topImgHeight)
-		console.log(maodian5.offsetTop + topImgHeight)
-		console.log(maodian6.offsetTop + topImgHeight)
-		console.log(11111, document.body.scrollTop)
-		console.log(22222, document.documentElement.scrollTop)
-	</script>
+    async function addCandidateIfImage(zip, path, candidates) {
+        const file = zip.file(path);
+        if (file) {
+            const mimeType = path.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+            const blob = await file.async("blob");
+            const dataUrl = await blobToDataURL(new Blob([blob], { type: mimeType }));
+            candidates.push({ path, dataUrl });
+        }
+    }
+
+    function blobToDataURL(blob) {
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.readAsDataURL(blob);
+        });
+    }
+
+    async function selectCoverFromCandidates(candidates, epubName) {
+        return new Promise((resolve) => {
+            const modal = document.createElement('div');
+            modal.className = 'modal fade';
+            modal.innerHTML = `
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">选择 ${epubName} 的封面图片</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div id="coverOptions" style="overflow-y: auto; max-height: 400px;"></div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-primary" id="confirmCover"><i class="fas fa-check"></i> 确认</button>
+                            <button class="btn btn-secondary" data-bs-dismiss="modal"><i class="fas fa-times"></i> 取消</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            const coverOptions = modal.querySelector('#coverOptions');
+            let selectedIndex = 0;
+            candidates.forEach((candidate, i) => {
+                const div = document.createElement('div');
+                div.className = 'cover-option';
+                div.innerHTML = `<img src="${candidate.dataUrl}" alt="候选封面 ${i + 1}"><p>${candidate.path}</p>`;
+                if (i === 0) div.classList.add('selected');
+                div.onclick = () => { coverOptions.querySelectorAll('.cover-option').forEach(opt => opt.classList.remove('selected')); div.classList.add('selected'); selectedIndex = i; };
+                coverOptions.appendChild(div);
+            });
+
+            const confirmBtn = modal.querySelector('#confirmCover');
+            const bsModal = new bootstrap.Modal(modal);
+            bsModal.show();
+            confirmBtn.onclick = () => { bsModal.hide(); modal.remove(); resolve(candidates[selectedIndex].dataUrl); };
+            modal.addEventListener('hidden.bs.modal', () => { modal.remove(); resolve(null); }, { once: true });
+        });
+    }
+
+    function createPreviewItem(index) {
+        const item = images[index];
+        const container = document.getElementById('previewContainer');
+        const div = document.createElement('div');
+        div.className = 'preview-item';
+        div.innerHTML = `
+            <button class="delete-btn" onclick="deletePreviewItem(${index})"><i class="fas fa-trash"></i></button>
+            <label><span>书名:</span><input type="text" class="title-input" value="${item.title}"></label>
+            <label><span>作者:</span><input type="text" class="author-input" value="${item.author}"></label>
+            <label><span>图片处理:</span><select class="image-mode-input" data-index="${index}">
+                <option value="crop" ${item.imageMode === 'crop' ? 'selected' : ''}>裁剪</option>
+                <option value="stretch" ${item.imageMode === 'stretch' ? 'selected' : ''}>拉伸</option>
+                <option value="fitWidth" ${item.imageMode === 'fitWidth' ? 'selected' : ''}>适应宽度</option>
+                <option value="fitHeight" ${item.imageMode === 'fitHeight' ? 'selected' : ''}>适应高度</option>
+            </select></label>
+            <div class="crop-controls" style="display: ${item.imageMode === 'crop' ? 'block' : 'none'};">
+                <label><span>水平位置:</span><input type="range" class="crop-x" min="0" max="1" step="0.01" value="${item.cropX}"></label>
+                <label><span>垂直位置:</span><input type="range" class="crop-y" min="0" max="1" step="0.01" value="${item.cropY}"></label>
+            </div>
+            <label><span>替换 EPUB:</span><select class="epub-select" data-index="${index}"></select></label>
+            <canvas id="canvas-${index}"></canvas>
+        `;
+        container.appendChild(div);
+        updateEpubOptions();
+        updatePreview(index);
+
+        div.querySelector('.title-input').addEventListener('input', (e) => { images[index].title = e.target.value; updatePreview(index); });
+        div.querySelector('.author-input').addEventListener('input', (e) => { images[index].author = e.target.value; updatePreview(index); });
+        div.querySelector('.image-mode-input').addEventListener('change', (e) => {
+            images[index].imageMode = e.target.value;
+            div.querySelector('.crop-controls').style.display = e.target.value === 'crop' ? 'block' : 'none';
+            updatePreview(index);
+        });
+        div.querySelector('.crop-x').addEventListener('input', (e) => { images[index].cropX = parseFloat(e.target.value); updatePreview(index); });
+        div.querySelector('.crop-y').addEventListener('input', (e) => { images[index].cropY = parseFloat(e.target.value); updatePreview(index); });
+        div.querySelector('.epub-select').addEventListener('change', (e) => { images[index].epubIndex = parseInt(e.target.value); });
+    }
+
+    function updatePreview(index) {
+        const item = images[index];
+        if (!item) return;
+        const canvas = document.getElementById(`canvas-${index}`);
+        const ctx = canvas.getContext('2d');
+        const outputWidth = parseInt(document.getElementById('outputWidth').value);
+        const aspectRatio = parseFloat(document.getElementById('aspectRatio').value);
+        const outputHeight = Math.round(outputWidth / aspectRatio);
+        canvas.width = outputWidth;
+        canvas.height = outputHeight;
+
+        const titleSize = parseInt(document.getElementById('titleSize').value);
+        const authorSize = parseInt(document.getElementById('authorSize').value);
+        const lineSpacing = parseInt(document.getElementById('lineSpacing').value);
+        const topSpace = parseInt(document.getElementById('topSpace').value);
+        const leftMargin = parseInt(document.getElementById('leftMargin').value);
+        const bgColor = document.getElementById('bgColor').value;
+        const textColor = document.getElementById('textColor').value;
+        const imageMode = item.imageMode;
+        const fontFamily = document.getElementById('fontFamily').value;
+        const textAlign = document.getElementById('textAlign').value;
+
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, outputWidth, outputHeight);
+
+        const imageHeight = outputHeight - topSpace;
+        const imageWidth = outputWidth;
+        if (imageMode === 'crop') {
+            let sx, sy, sWidth, sHeight;
+            const imgRatio = item.img.width / item.img.height;
+            const targetRatio = imageWidth / imageHeight;
+            if (imgRatio > targetRatio) {
+                sHeight = item.img.height;
+                sWidth = sHeight * targetRatio;
+                const maxOffsetX = item.img.width - sWidth;
+                sx = maxOffsetX * item.cropX;
+                sy = 0;
+            } else {
+                sWidth = item.img.width;
+                sHeight = sWidth / targetRatio;
+                const maxOffsetY = item.img.height - sHeight;
+                sx = 0;
+                sy = maxOffsetY * item.cropY;
+            }
+            ctx.drawImage(item.img, sx, sy, sWidth, sHeight, 0, topSpace, imageWidth, imageHeight);
+        } else if (imageMode === 'stretch') {
+            ctx.drawImage(item.img, 0, topSpace, imageWidth, imageHeight);
+        } else if (imageMode === 'fitWidth') {
+            const scale = imageWidth / item.img.width;
+            const newHeight = item.img.height * scale;
+            const offsetY = topSpace + (imageHeight - newHeight) / 2;
+            ctx.drawImage(item.img, 0, offsetY, imageWidth, newHeight);
+        } else if (imageMode === 'fitHeight') {
+            const scale = imageHeight / item.img.height;
+            const newWidth = item.img.width * scale;
+            const offsetX = (imageWidth - newWidth) / 2;
+            ctx.drawImage(item.img, offsetX, topSpace, newWidth, imageHeight);
+        }
+
+        ctx.fillStyle = textColor;
+        ctx.textAlign = textAlign;
+        const textMargin = 40;
+        const totalTextHeight = titleSize + authorSize + lineSpacing;
+        let adjustedTitleSize = titleSize, adjustedAuthorSize = authorSize, adjustedLineSpacing = lineSpacing;
+        const availableHeight = topSpace - 2 * textMargin;
+        if (totalTextHeight > availableHeight) {
+            const scaleFactor = availableHeight / totalTextHeight;
+            adjustedTitleSize = titleSize * scaleFactor;
+            adjustedAuthorSize = authorSize * scaleFactor;
+            adjustedLineSpacing = lineSpacing * scaleFactor;
+        }
+        const textBlockHeight = adjustedTitleSize + adjustedLineSpacing + adjustedAuthorSize;
+        const textStartY = textMargin + (availableHeight - textBlockHeight) / 2;
+        const textX = textAlign === 'left' ? leftMargin : textAlign === 'center' ? outputWidth / 2 : outputWidth - leftMargin;
+        ctx.font = `bold ${adjustedTitleSize}px ${fontFamily}`;
+        ctx.fillText(item.title.trim(), textX, textStartY + adjustedTitleSize);
+        ctx.font = `${adjustedAuthorSize}px ${fontFamily}`;
+        ctx.fillText(item.author.trim(), textX, textStartY + adjustedTitleSize + adjustedLineSpacing + adjustedAuthorSize);
+    }
+
+    function updateAllPreviews() {
+        images.forEach((_, index) => updatePreview(index));
+    }
+
+    const debouncedUpdateAllPreviews = debounce(updateAllPreviews, 100);
+
+    async function downloadAll() {
+        if (!images.length) { showStatus('请先上传文件！', 'danger'); return; }
+        const mode = document.getElementById('downloadMode').value;
+        const format = document.getElementById('outputFormat').value;
+        showLoading(true);
+
+        if (mode === 'individual') {
+            for (let i = 0; i < images.length; i++) {
+                const item = images[i];
+                const canvas = document.getElementById(`canvas-${i}`);
+                const quality = format === 'image/jpeg' ? 0.9 : 1.0;
+                const imageLink = document.createElement('a');
+                imageLink.download = `${item.title}-${item.author}-kindle.${format.split('/')[1]}`;
+                imageLink.href = canvas.toDataURL(format, quality);
+                document.body.appendChild(imageLink);
+                imageLink.click();
+                document.body.removeChild(imageLink);
+
+                if (item.epubIndex !== -1 && epubFiles[item.epubIndex]) {
+                    const epubFile = epubFiles[item.epubIndex];
+                    showStatus(`处理中：${epubFile.name} (${i + 1}/${images.length})...`);
+                    try {
+                        const coverBlob = await new Promise(resolve => canvas.toBlob(blob => resolve(blob), format, quality));
+                        const newEpubBlob = await processSingleEpub(epubFile, coverBlob, format, item.title, item.author);
+                        const epubLink = document.createElement("a");
+                        // 修改文件名，添加 .kindle 后缀
+                        const baseName = epubFile.name.split('.')[0]; // 去掉 .epub
+                        epubLink.download = `${item.title}-${baseName}.kindle.epub`;
+                        epubLink.href = URL.createObjectURL(newEpubBlob);
+                        document.body.appendChild(epubLink);
+                        epubLink.click();
+                        document.body.removeChild(epubLink);
+                    } catch (error) { showStatus(`处理 ${epubFile.name} 时出错：${error.message}`, "danger"); showLoading(false); return; }
+                }
+                if (i === images.length - 1) setTimeout(() => showLoading(false), 500);
+            }
+            showStatus("全部完成！文件已下载。", "success");
+        } else if (mode === 'zip') {
+            const zip = new JSZip();
+            const promises = images.map(async (item, i) => {
+                const canvas = document.getElementById(`canvas-${i}`);
+                const quality = format === 'image/jpeg' ? 0.9 : 1.0;
+                const imageBlob = await new Promise(resolve => canvas.toBlob(blob => resolve(blob), format, quality));
+                zip.file(`${item.title}-${item.author}-kindle.${format.split('/')[1]}`, imageBlob);
+                if (item.epubIndex !== -1 && epubFiles[item.epubIndex]) {
+                    const epubFile = epubFiles[item.epubIndex];
+                    showStatus(`处理中：${epubFile.name} (${i + 1}/${images.length})...`);
+                    const coverBlob = await new Promise(resolve => canvas.toBlob(blob => resolve(blob), format, quality));
+                    const newEpubBlob = await processSingleEpub(epubFile, coverBlob, format, item.title, item.author);
+                    // 修改文件名，添加 .kindle 后缀
+                    const baseName = epubFile.name.split('.')[0]; // 去掉 .epub
+                    zip.file(`${item.title}-${baseName}.kindle.epub`, newEpubBlob);
+                }
+            });
+            await Promise.all(promises);
+            zip.generateAsync({ type: 'blob' }).then((content) => {
+                saveAs(content, 'kindle_output.zip');
+                showStatus("全部完成！文件已打包下载。", "success");
+                showLoading(false);
+            });
+        }
+    }
+
+    function resetDefaults() {
+        document.getElementById('titleSize').value = defaultParams.titleSize;
+        document.getElementById('titleSizeRange').value = defaultParams.titleSize;
+        document.getElementById('authorSize').value = defaultParams.authorSize;
+        document.getElementById('authorSizeRange').value = defaultParams.authorSize;
+        document.getElementById('lineSpacing').value = defaultParams.lineSpacing;
+        document.getElementById('lineSpacingRange').value = defaultParams.lineSpacing;
+        document.getElementById('topSpace').value = defaultParams.topSpace;
+        document.getElementById('topSpaceRange').value = defaultParams.topSpace;
+        document.getElementById('leftMargin').value = defaultParams.leftMargin;
+        document.getElementById('leftMarginRange').value = defaultParams.leftMargin;
+        document.getElementById('outputWidth').value = defaultParams.outputWidth;
+        document.getElementById('outputWidthRange').value = defaultParams.outputWidth;
+        document.getElementById('aspectRatio').value = defaultParams.aspectRatio;
+        document.getElementById('aspectRatioRange').value = defaultParams.aspectRatio;
+        document.getElementById('bgColor').value = defaultParams.bgColor;
+        document.getElementById('textColor').value = defaultParams.textColor;
+        document.getElementById('imageMode').value = defaultParams.imageMode;
+        document.getElementById('outputFormat').value = defaultParams.outputFormat;
+        document.getElementById('fontFamily').value = defaultParams.fontFamily;
+        document.getElementById('textAlign').value = defaultParams.textAlign;
+        document.getElementById('previewScale').value = defaultParams.previewScale;
+        images.forEach((item) => { item.imageMode = defaultParams.imageMode; item.cropX = 0.5; item.cropY = 0.5; });
+        updatePreviewScale();
+        updateAllPreviews();
+        saveParams();
+    }
+
+    function showLoading(show) { document.getElementById('loading').style.display = show ? 'block' : 'none'; }
+    function showStatus(message, type = 'info') { const status = document.getElementById('status'); status.textContent = message; status.className = `status alert alert-${type}`; status.style.display = 'block'; }
+    function updateEpubOptions() { document.querySelectorAll('.epub-select').forEach((select, index) => { const currentEpubIndex = images[index] ? images[index].epubIndex : -1; select.innerHTML = '<option value="-1">不替换</option>' + epubFiles.map((file, i) => `<option value="${i}" ${i === currentEpubIndex ? 'selected' : ''}>${file.name}</option>`).join(''); }); }
+    async function findCoverPath(zip) { const opfFile = Object.keys(zip.files).find(file => file.toLowerCase().endsWith('.opf')); if (!opfFile) throw new Error("未找到 .opf 文件"); const opfText = await zip.file(opfFile).async("string"); const parser = new DOMParser(); const doc = parser.parseFromString(opfText, "application/xml"); const coverMeta = doc.querySelector('meta[name="cover"]'); if (coverMeta) { const coverId = coverMeta.getAttribute("content"); const coverItem = doc.querySelector(`item[id="${coverId}"]`); if (coverItem) return opfFile.substring(0, opfFile.lastIndexOf("/") + 1) + coverItem.getAttribute("href"); } const items = doc.getElementsByTagName("item"); for (let item of items) { const id = item.getAttribute("id")?.toLowerCase(); const href = item.getAttribute("href"); const properties = item.getAttribute("properties"); if ((id && id.includes("cover")) || properties === "cover-image") return opfFile.substring(0, opfFile.lastIndexOf("/") + 1) + href; } const coverGuess = Object.keys(zip.files).find(file => /cover\.(jpe?g|png)$/i.test(file)); if (coverGuess) return coverGuess; throw new Error("未找到封面图片路径"); }
+    async function updateMetadata(zip, opfPath, newTitle, newAuthor) { const opfText = await zip.file(opfPath).async("string"); const parser = new DOMParser(); const doc = parser.parseFromString(opfText, "application/xml"); const metadata = doc.getElementsByTagName("metadata")[0]; if (newTitle) { let title = metadata.getElementsByTagName("dc:title")[0]; if (!title) { title = doc.createElementNS("http://purl.org/dc/elements/1.1/", "dc:title"); metadata.appendChild(title); } title.textContent = newTitle; } if (newAuthor) { let creator = metadata.getElementsByTagName("dc:creator")[0]; if (!creator) { creator = doc.createElementNS("http://purl.org/dc/elements/1.1/", "dc:creator"); metadata.appendChild(creator); } creator.textContent = newAuthor; } const serializer = new XMLSerializer(); return '<?xml version="1.0" encoding="UTF-8"?>\n' + serializer.serializeToString(doc); }
+    async function processSingleEpub(epubFile, coverBlob, format, newTitle, newAuthor) { const zip = new JSZip(); await zip.loadAsync(await epubFile.arrayBuffer(), { createFolders: true }); if (!zip.files["mimetype"]) zip.file("mimetype", "application/epub+zip", { compression: "STORE" }); const opfPath = Object.keys(zip.files).find(file => file.toLowerCase().endsWith('.opf')); if (!opfPath) throw new Error(`${epubFile.name} 不是有效的 EPUB 文件`); const coverPath = await findCoverPath(zip); zip.file(coverPath, coverBlob, { binary: true }); if (newTitle || newAuthor) { const updatedOpf = await updateMetadata(zip, opfPath, newTitle, newAuthor); zip.file(opfPath, updatedOpf); } return await zip.generateAsync({ type: "blob", mimeType: "application/epub+zip", compression: "DEFLATE", compressionOptions: { level: 6 } }); }
+
+    function clearAllFiles() {
+        images = [];
+        epubFiles = [];
+        document.getElementById('previewContainer').innerHTML = '';
+        updateEpubOptions();
+        showStatus('所有文件已清空！', 'success');
+    }
+
+    function deletePreviewItem(index) {
+        images.splice(index, 1);
+        document.getElementById(`canvas-${index}`).closest('.preview-item').remove();
+        images.forEach((item, i) => {
+            if (i >= index) {
+                const itemDiv = document.getElementById(`canvas-${i}`).closest('.preview-item');
+                itemDiv.querySelector('.delete-btn').setAttribute('onclick', `deletePreviewItem(${i})`);
+                itemDiv.querySelector('.image-mode-input').setAttribute('data-index', i);
+                itemDiv.querySelector('.epub-select').setAttribute('data-index', i);
+                itemDiv.querySelector('canvas').id = `canvas-${i}`;
+            }
+        });
+        updateEpubOptions();
+        showStatus(`已删除第 ${index + 1} 个文件！`, 'info');
+    }
+
+    </script>
 </body>
-
 </html>
-
